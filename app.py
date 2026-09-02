@@ -29,47 +29,14 @@ def ler_pdf(arquivo):
     return texto
 
 
-def buscar(texto, padrao):
-    resultado = re.search(
-        padrao,
-        texto,
-        re.IGNORECASE | re.MULTILINE
-    )
-
-    if resultado:
-        return resultado.group(1).strip()
-
-    return ""
-
-
 def identificar_tipo(texto):
 
-    texto = texto.upper()
+    texto_maiusculo = texto.upper()
 
-    if "E-GTA" in texto or "GUIA DE TRÂNSITO ANIMAL" in texto:
+    if "E-GTA" in texto_maiusculo or "GUIA DE TRÂNSITO ANIMAL" in texto_maiusculo:
         return "GTA"
 
-    if "FATURA:" in texto:
+    if "FATURA:" in texto_maiusculo:
         return "CONTRA NOTA"
 
-    return "NOTA FISCAL"
-
-
-def extrair_campos(texto, arquivo):
-
-    tipo = identificar_tipo(texto)
-
-    numero_gta = ""
-
-    gta_match = re.search(
-        r"e-GTA[: ]+([A-Z0-9]+)",
-        texto,
-        re.IGNORECASE
-    )
-
-    if gta_match:
-        numero_gta = gta_match.group(1)
-
-    if not numero_gta:
-        gta_match = re.search(
-    
+   
