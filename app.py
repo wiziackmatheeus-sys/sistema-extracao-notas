@@ -1,6 +1,7 @@
 import streamlit as st
 import pdfplumber
 import pandas as pd
+import re
 from io import BytesIO
 
 st.set_page_config(
@@ -10,6 +11,7 @@ st.set_page_config(
 
 st.title("🐂 Extrator de Notas de Gado")
 
+
 def ler_pdf(arquivo):
     texto = ""
 
@@ -17,6 +19,7 @@ def ler_pdf(arquivo):
         with pdfplumber.open(arquivo) as pdf:
             for pagina in pdf.pages:
                 conteudo = pagina.extract_text()
+
                 if conteudo:
                     texto += conteudo + "\n"
 
@@ -26,54 +29,47 @@ def ler_pdf(arquivo):
     return texto
 
 
-arquivos = st.file_uploader(
-    "Selecione os PDFs",
-    type=["pdf"],
-    accept_multiple_files=True
-)
-
-if arquivos:
-
-    dados = []
-
-    for arquivo in arquivos:
-
-        texto = ler_pdf(arquivo)
-
-        st.subheader(arquivo.name)
-
-        st.write("Caracteres encontrados:", len(texto))
-
-        with st.expander("Ver texto extraído"):
-            st.text(texto[:5000])
-
-        dados.append({
-            "Arquivo": arquivo.name,
-            "Caracteres": len(texto)
-        })
-
-    df = pd.DataFrame(dados)
-
-    st.subheader("Resumo")
-
-    st.dataframe(df, use_container_width=True)
-
-    excel = BytesIO()
-
-    with pd.ExcelWriter(
-        excel,
-        engine="openpyxl"
-    ) as writer:
-
-        df.to_excel(
-            writer,
-            sheet_name="Resumo",
-            index=False
-        )
-
-    st.download_button(
-        "📥 Baixar Excel",
-        data=excel.getvalue(),
-        file_name="resultado.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+def buscar(texto, padrao):
+    resultado = re.search(
+        padrao,
+        texto,
+        re.IGNORECASE | re.MULTILINE
     )
+
+    if resultado:
+        return resultado.group(1).strip()
+
+    return ""
+
+
+def identificar_tipo(texto):
+
+    texto = texto.upper()
+
+    if "E-GTA" in texto or "GUIA DE TRÂNSITO ANIMAL" in texto:
+        return "GTA"
+
+    if "FATURA:" in texto:
+        return "CONTRA NOTA"
+
+    return "NOTA FISCAL"
+
+
+def extrair_campos(texto, arquivo):
+
+    tipo = identificar_tipo(texto)
+
+    numero_gta = ""
+
+    gta_match = re.search(
+        r"e-GTA[: ]+([A-Z0-9]+)",
+        texto,
+        re.IGNORECASE
+    )
+
+    if gta_match:
+        numero_gta = gta_match.group(1)
+
+    if not numero_gta:
+        gta_match = re.search(
+    
