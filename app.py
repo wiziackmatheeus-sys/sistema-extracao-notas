@@ -14,20 +14,17 @@ st.set_page_config(
 st.title("Extrator de Notas de Gado")
 
 
-def ler_pdf(arquivo):
+def texto_pdf(arquivo):
     arquivo.seek(0)
-    texto = ""
 
     with pdfplumber.open(arquivo) as pdf:
-        for pagina in pdf.pages:
-            texto += (
-                pagina.extract_text() or ""
-            ) + " "
-
-    return " ".join(texto.split())
+        return " ".join(
+            (pagina.extract_text() or "")
+            for pagina in pdf.pages
+        )
 
 
-def achar(texto, padroes):
+def buscar(texto, padroes):
     for padrao in padroes:
         resultado = re.search(
             padrao,
@@ -36,4 +33,25 @@ def achar(texto, padroes):
         )
 
         if resultado:
-        
+            return resultado.group(1).strip(
+                " .,-"
+            )
+
+    return ""
+
+
+def valor_total(texto):
+    padroes = [
+        r"VALOR TOTAL DA NOTA\s*([\d.]+,\d{2})",
+        r"VALOR TOTAL:\s*R\$\s*([\d.]+,\d{2})",
+        r"Valor Líquido:\s*([\d.]+(?:,\d{2})?)",
+        r"Valor Original:\s*([\d.]+(?:,\d{2})?)"
+    ]
+
+    encontrados = []
+
+    for padrao in padroes:
+        resultados = re.findall(
+            padrao,
+            texto,
+  
