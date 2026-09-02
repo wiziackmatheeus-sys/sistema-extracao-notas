@@ -14,5 +14,4 @@ arquivos = st.file_uploader(
 )
 
 if arquivos:
-    st.success(f"{len(arquivos)} arquivo(s) carregado(s)")
-``
+    st.success(f"{len(arquivos)} PDF(s) carregado(s)")
