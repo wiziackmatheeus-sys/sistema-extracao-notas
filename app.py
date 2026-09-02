@@ -8,24 +8,28 @@ st.set_page_config(page_title="Extrator de Notas", layout="wide")
 st.title("Extrator de Notas de Gado")
 
 
-def ler(arquivo):
+def ler_pdf(arquivo):
     arquivo.seek(0)
+    texto = ""
+
     with pdfplumber.open(arquivo) as pdf:
-        return " ".join(
-            " ".join((pagina.extract_text() or "").split())
-            for pagina in pdf.pages
-        )
+        for pagina in pdf.pages:
+            texto += (pagina.extract_text() or "") + " "
+
+    return " ".join(texto.split())
 
 
-def achar(texto, padroes):
+def buscar(texto, padroes):
     for padrao in padroes:
-        resultado = re.search(padrao, texto, re.I)
+        resultado = re.search(padrao, texto, re.IGNORECASE)
+
         if resultado:
             return resultado.group(1).strip(" .,-")
+
     return ""
 
 
-def valor(texto):
+def buscar_valor(texto):
     padroes = [
         r"VALOR TOTAL DA NOTA\s*([\d.]+,\d{2})",
         r"VALOR TOTAL:\s*R\$\s*([\d.]+,\d{2})",
@@ -33,25 +37,27 @@ def valor(texto):
         r"Valor Original:\s*([\d.]+(?:,\d{2})?)"
     ]
 
-    encontrados = []
+    valores = []
 
     for padrao in padroes:
-        encontrados.extend(
-            re.findall(padrao, texto, re.I)
+        valores += re.findall(
+            padrao,
+            texto,
+            re.IGNORECASE
         )
 
-    if not encontrados:
+    if not valores:
         return ""
 
     numeros = [
         float(item.replace(".", "").replace(",", "."))
-        for item in encontrados
+        for item in valores
     ]
 
-    resultado = f"{max(numeros):,.2f}"
+    maior = f"{max(numeros):,.2f}"
 
     return (
-        resultado
+        maior
         .replace(",", "X")
         .replace(".", ",")
         .replace("X", ".")
@@ -59,4 +65,22 @@ def valor(texto):
 
 
 def extrair(arquivo):
-    texto = ler(
+    texto = ler_pdf(arquivo)
+    maiusculo = texto.upper()
+    tipo = "NOTA FISCAL"
+
+    if (
+        "E-GTA" in maiusculo
+        or "GUIA DE TRÂNSITO ANIMAL" in maiusculo
+    ):
+        tipo = "GTA"
+
+    elif "FATURA:" in maiusculo:
+        tipo = "CONTRA NOTA"
+
+    pecuarista = buscar(
+        texto,
+        [
+            r"Procedência.*?Nome:\s*(.*?)\s+Estabelecimento:",
+            r"RECEBEMOS DE\s+(.*?)(?:\s+-\s+OTR|\s+OS PRODUTOS)",
+            r"DESTINAT
