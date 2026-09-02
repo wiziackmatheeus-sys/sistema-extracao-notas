@@ -1,8 +1,10 @@
-import streamlit as st
-import pdfplumber
-import pandas as pd
 import re
 from io import BytesIO
+
+import pandas as pd
+import pdfplumber
+import streamlit as st
+
 
 st.set_page_config(
     page_title="Extrator de Notas de Gado",
@@ -10,114 +12,192 @@ st.set_page_config(
 )
 
 st.title("🐂 Extrator de Notas de Gado")
+st.caption("Envie GTA, Nota Fiscal e Contra Nota em PDF.")
 
 
 def ler_pdf(arquivo):
     texto = ""
 
-    try:
-        with pdfplumber.open(arquivo) as pdf:
-            for pagina in pdf.pages:
-                conteudo = pagina.extract_text()
+    arquivo.seek(0)
 
-                if conteudo:
-                    texto += conteudo + "\n"
+    with pdfplumber.open(arquivo) as pdf:
+        for pagina in pdf.pages:
+            conteudo = pagina.extract_text() or ""
+            texto += conteudo + "\n"
 
-    except Exception as erro:
-        st.error(f"Erro ao ler {arquivo.name}: {erro}")
-
-    return texto
+    return " ".join(texto.split())
 
 
-def extrair_info(texto, nome_arquivo):
-
-    tipo = "NF"
-
-    if "GUIA DE TRÂNSITO ANIMAL" in texto.upper() or "E-GTA" in texto.upper():
-        tipo = "GTA"
-
-    elif "FATURA:" in texto.upper():
-        tipo = "CONTRA NOTA"
-
-    numero_gta = ""
-
-    match = re.search(r"PA[0-9A-Z]+", texto)
-
-    if match:
-        numero_gta = match.group(0)
-
-    data = ""
-
-    match = re.search(r"(\d{2}/\d{2}/\d{4})", texto)
-
-    if match:
-        data = match.group(1)
-
-    valor = ""
-
-    match = re.search(
-        r"VALOR TOTAL DA NOTA.*?([\d\.]+,\d{2})",
-        texto,
-        re.IGNORECASE
-    )
-
-    if match:
-        valor = match.group(1)
-
-    if not valor:
-
-        match = re.search(
-            r"VALOR TOTAL:\s*R\$\s*([\d\.]+,\d{2})",
+def primeiro_resultado(texto, padroes):
+    for padrao in padroes:
+        resultado = re.search(
+            padrao,
             texto,
             re.IGNORECASE
         )
 
-        if match:
-            valor = match.group(1)
+        if resultado:
+            return resultado.group(1).strip(" .,-")
 
-    nota = ""
+    return ""
 
-    match = re.search(
-        r"004\.([0-9\.]+)",
-        texto
-    )
 
-    if match:
-        nota = match.group(1)
+def identificar_tipo(texto):
+    texto_maiusculo = texto.upper()
 
-    contranota = ""
+    if (
+        "GUIA DE TRÂNSITO ANIMAL" in texto_maiusculo
+        or "E-GTA" in texto_maiusculo
+    ):
+        return "GTA"
 
-    match = re.search(
-        r"Fatura:\s*(\d+)",
-        texto,
-        re.IGNORECASE
-    )
+    if (
+        "FATURA:" in texto_maiusculo
+        or "ENT MERC REC C/FIM ESP" in texto_maiusculo
+    ):
+        return "CONTRA NOTA"
 
-    if match:
-        contranota = match.group(1)
+    return "NOTA FISCAL"
 
+
+def extrair_pecuarista(texto, tipo):
     pecuarista = ""
 
-    match = re.search(
-        r"ADALBERTO TADEU DE ALMEIDA",
+    if tipo == "GTA":
+        pecuarista = primeiro_resultado(
+            texto,
+            [
+                (
+                    r"Procedência.*?Nome:\s*([^*]+?)"
+                    r"(?=\s+Estabelecimento:)"
+                )
+            ]
+        )
+
+    elif tipo == "CONTRA NOTA":
+        pecuarista = primeiro_resultado(
+            texto,
+            [
+                (
+                    r"DESTINATÁRIO\s*/\s*REMETENTE.*?"
+                    r"NOME\s*/\s*RAZÃO SOCIAL\s*\**\s*"
+                    r"([A-ZÀ-Ú0-9 .,&'-]+?)"
+                    r"(?=\s+CNPJ\s*/\s*CPF)"
+                ),
+                (
+                    r"RECEBEMOS DE\s+(.+?)"
+                    r"(?=\s+-\s+OTR|\s+OS PRODUTOS)"
+                )
+            ]
+        )
+
+    else:
+        pecuarista = primeiro_resultado(
+            texto,
+            [
+                (
+                    r"EMITENTE.*?"
+                    r"NOME\s*/\s*NOME EMPRESARIAL.*?"
+                    r"HORA DA SAÍDA\s+"
+                    r"([A-ZÀ-Ú0-9 .,&'-]+?)\s+"
+                    r"\d{3}[.]?\d{3}[.]?\d{3}[-/]?\d{2}"
+                ),
+                (
+                    r"RECEBEMOS DE\s+(.+?)"
+                    r"(?=\s+OS PRODUTOS)"
+                )
+            ]
+        )
+
+    return pecuarista
+
+
+def extrair_dados(texto, nome_arquivo):
+    tipo = identificar_tipo(texto)
+
+    pecuarista = extrair_pecuarista(
         texto,
-        re.IGNORECASE
+        tipo
     )
 
-    if match:
-        pecuarista = match.group(0)
+    numero_gta = primeiro_resultado(
+        texto,
+        [
+            r"e-GTA:\s*([A-Z]{0,2}\d+[A-Z]?)",
+            r"GTA:\s*([A-Z]{0,2}\d+[A-Z]?)"
+        ]
+    )
 
-    return {
-        "Arquivo": nome_arquivo,
-        "Tipo": tipo,
-        "Pecuarista": pecuarista,
-        "Numero Nota": nota,
-        "Numero Contra Nota": contranota,
-        "Numero GTA": numero_gta,
-        "Data": data,
-        "Valor": valor
-    }
+    data_emissao = primeiro_resultado(
+        texto,
+        [
+            r"Emissão em:\s*(\d{2}/\d{2}/\d{4})",
+            r"DATA DA EMISSÃO\s*(\d{2}/\d{2}/\d{4})",
+            (
+                r"DATA DA EMISSÃO.*?"
+                r"(\d{2}/\d{2}/\d{2})(?:\s|$)"
+            )
+        ]
+    )
 
+    numero_nota = ""
+    numero_contra_nota = ""
 
-arquivos = st.file_uploader(
-    "Selecione os PDFs",
+    if tipo == "NOTA FISCAL":
+        numero_nota = primeiro_resultado(
+            texto,
+            [
+                r"NF-e Nº:.*?(\d{3}[.]\d{3}[.]\d{3})",
+                r"Nº:\s*(\d{3}[.]\d{3}[.]\d{3})"
+            ]
+        )
+
+    elif tipo == "CONTRA NOTA":
+        numero_contra_nota = primeiro_resultado(
+            texto,
+            [
+                r"Fatura:\s*(\d+)",
+                r"NF-e No[.]?\s*0*(\d+)"
+            ]
+        )
+
+        numero_nota = primeiro_resultado(
+            texto,
+            [
+                r"Inf[.] Contribuinte:\s*NF\s*([\d.]+)"
+            ]
+        )
+
+    valor = primeiro_resultado(
+        texto,
+        [
+            (
+                r"VALOR TOTAL DA NOTA\s*"
+                r"([\d.]+,\d{2})"
+            ),
+            (
+                r"VALOR TOTAL:\s*R[$]\s*"
+                r"([\d.]+,\d{2})"
+            ),
+            (
+                r"Valor Líquido:\s*"
+                r"([\d.]+(?:,\d{2})?)"
+            )
+        ]
+    )
+
+    pendencias = []
+
+    if not pecuarista:
+        pendencias.append("pecuarista")
+
+    if tipo == "GTA" and not numero_gta:
+        pendencias.append("GTA")
+
+    if tipo == "NOTA FISCAL" and not numero_nota:
+        pendencias.append("nota")
+
+    if tipo == "CONTRA NOTA" and not numero_contra_nota:
+        pendencias.append("contra nota")
+
+    if tipo != "GTA"
